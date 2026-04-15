@@ -244,6 +244,7 @@ export default function HomePage() {
                   key={strategy.id}
                   strategy={strategy}
                   onClick={() => router.push(`/strategy/${strategy.id}`)}
+                  onAuthorClick={(authorId) => router.push(`/author/${authorId}`)}
                 />
               ))}
             </div>
@@ -257,9 +258,11 @@ export default function HomePage() {
 function StrategyCard({
   strategy,
   onClick,
+  onAuthorClick,
 }: {
   strategy: Strategy;
   onClick: () => void;
+  onAuthorClick: (authorId: string) => void;
 }) {
   const config = getBestConfig(strategy);
   const bt = strategy.backtest;
@@ -285,7 +288,16 @@ function StrategyCard({
           <h3 className="font-semibold text-lg group-hover:text-bs-purple transition-colors truncate">
             {strategy.name}
           </h3>
-          <p className="text-bs-muted text-sm truncate">by {authorName}</p>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const authorId = typeof strategy.author === "object" ? strategy.author?.id || strategy.author?.walletAddress : strategy.author;
+              if (authorId) onAuthorClick(authorId);
+            }}
+            className="text-bs-muted text-sm truncate hover:text-white transition-colors"
+          >
+            by {authorName}
+          </button>
         </div>
         <span className={`text-lg font-bold flex-shrink-0 ${isPositive ? "text-bs-green" : "text-bs-red"}`}>
           {isPositive ? "+" : ""}

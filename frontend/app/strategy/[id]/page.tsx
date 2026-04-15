@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   fetchStrategy,
+  fetchStrategies,
   fetchStrategyForks,
   fetchBacktest,
   runBacktest,
@@ -52,6 +53,7 @@ export default function StrategyDetailPage() {
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [parentStrategy, setParentStrategy] = useState<Strategy | null>(null);
   const [forks, setForks] = useState<Strategy[]>([]);
+  const [moreFromAuthor, setMoreFromAuthor] = useState<Strategy[]>([]);
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,8 +67,8 @@ export default function StrategyDetailPage() {
   const [forking, setForking] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchStrategy(id), fetchBacktest(id), fetchSymbols(), fetchStrategyForks(id)])
-      .then(async ([s, b, symData, forkData]) => {
+    Promise.all([fetchStrategy(id), fetchBacktest(id), fetchSymbols(), fetchStrategyForks(id), fetchStrategies()])
+      .then(async ([s, b, symData, forkData, allStrategies]) => {
         setStrategy(s);
         setForks(forkData || []);
         setBacktest(b);
@@ -75,6 +77,14 @@ export default function StrategyDetailPage() {
         const best = getBestConfig(s);
         setSymbol(best?.symbol || symData.defaultSymbol || "WOKB/USDT");
         setTimeframe(best?.timeframe || symData.defaultTimeframe || "1h");
+
+        const currentAuthorId = typeof s.author === "object" ? s.author?.id || s.author?.walletAddress : s.author;
+        const related = (allStrategies || []).filter((item) => {
+          if (item.id === s.id) return false;
+          const itemAuthorId = typeof item.author === "object" ? item.author?.id || item.author?.walletAddress : item.author;
+          return !!currentAuthorId && itemAuthorId === currentAuthorId;
+        }).slice(0, 4);
+        setMoreFromAuthor(related);
 
         if (s.forkFromId) {
           try {
@@ -172,7 +182,15 @@ export default function StrategyDetailPage() {
           </h1>
           <p className="text-bs-muted mb-2 break-words">{strategy.description}</p>
           <div className="flex flex-wrap items-center gap-2 text-sm text-bs-muted">
-            <span className="truncate max-w-[200px]">by {authorName}</span>
+            <button
+              onClick={() => {
+                const authorId = typeof strategy.author === "object" ? strategy.author?.id || strategy.author?.walletAddress : strategy.author;
+                if (authorId) router.push(`/author/${authorId}`);
+              }}
+              className="truncate max-w-[200px] hover:text-white transition-colors"
+            >
+              by {authorName}
+            </button>
             {bestConfig && (
               <>
                 <span>•</span>
@@ -215,7 +233,7 @@ export default function StrategyDetailPage() {
         </div>
       </div>
 
-      {(parentStrategy || forks.length > 0) && (
+      {(parentStrategy || forks.length > 0 || moreFromAuthor.length > 0) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {parentStrategy && (
             <button
@@ -251,6 +269,47 @@ export default function StrategyDetailPage() {
                       <div className="text-[10px] text-bs-muted whitespace-nowrap">
                         {new Date(fork.createdAt).toLocaleDateString()}
                       </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {moreFromAuthor.length > 0 && (
+            <div className="bg-bs-card border border-bs-border rounded-xl p-4 lg:col-span-2">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-xs text-bs-muted">Author</div>
+                  <div className="font-semibold">More from {authorName}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const authorId = typeof strategy.author === "object" ? strategy.author?.id || strategy.author?.walletAddress : strategy.author;
+                    if (authorId) router.push(`/author/${authorId}`);
+                  }}
+                  className="text-xs text-bs-purple hover:underline"
+                >
+                  View author page
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {moreFromAuthor.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => router.push(`/strategy/${item.id}`)}
+                    className="text-left px-3 py-3 rounded-lg bg-bs-input hover:bg-bs-card-hover transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{item.name}</div>
+                        <div className="text-xs text-bs-muted line-clamp-2 mt-1">{item.description || "No description yet."}</div>
+                      </div>
+                      {(item.robustnessScore ?? 0) > 0 && (
+                        <span className="px-2 py-0.5 text-[10px] rounded bg-bs-green/10 text-bs-green font-medium whitespace-nowrap">
+                          R {item.robustnessScore?.toFixed(0)}
+                        </span>
+                      )}
                     </div>
                   </button>
                 ))}
