@@ -365,11 +365,16 @@ function MarketStatCard({
   value: string;
   tone?: "green" | "purple";
 }) {
-  const color = tone === "green" ? "text-bs-green" : tone === "purple" ? "text-bs-purple" : "text-foreground";
+  const color = tone === "green" ? "text-bs-green" : tone === "purple" ? "text-bs-purple" : "";
   return (
     <div className="bg-bs-card border border-bs-border rounded-xl p-4">
       <p className="text-bs-muted text-xs mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${color}`}>{value}</p>
+      <p
+        className={`text-2xl font-bold ${color}`}
+        style={tone ? undefined : { color: "rgb(var(--foreground-rgb))" }}
+      >
+        {value}
+      </p>
     </div>
   );
 }
