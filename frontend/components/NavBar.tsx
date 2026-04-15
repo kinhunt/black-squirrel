@@ -4,14 +4,16 @@ import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { truncateAddress } from "@/lib/api";
 
+type ThemeMode = "dark" | "light";
+
 export function NavBar() {
   const { user, isLoggedIn, isLoading, login, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeMode>("dark");
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -21,6 +23,22 @@ export function NavBar() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  useEffect(() => {
+    const current = (document.documentElement.dataset.theme as ThemeMode) || "dark";
+    setTheme(current);
+  }, []);
+
+  const applyTheme = (nextTheme: ThemeMode) => {
+    setTheme(nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.classList.toggle("dark", nextTheme === "dark");
+    localStorage.setItem("theme", nextTheme);
+  };
+
+  const toggleTheme = () => {
+    applyTheme(theme === "dark" ? "light" : "dark");
+  };
 
   const handleConnect = async () => {
     setConnecting(true);
@@ -48,6 +66,15 @@ export function NavBar() {
         </a>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleTheme}
+            className="px-3 py-1.5 bg-bs-card border border-bs-border rounded-lg hover:border-bs-purple/50 transition-colors text-sm"
+            aria-label="Toggle theme"
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? "🌞" : "🌙"}
+          </button>
+
           <a
             href="/create"
             className="px-4 py-1.5 bg-bs-purple text-white text-sm font-semibold rounded-lg hover:bg-bs-purple-dark transition-colors"
