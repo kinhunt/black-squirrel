@@ -142,19 +142,50 @@ export interface OptimizeResult {
   elapsedSeconds: number;
 }
 
+export interface ScanResultRow {
+  symbol: string;
+  timeframe: string;
+  bestParams: Record<string, number>;
+  inSample?: {
+    sharpe?: number;
+    return_pct?: number;
+    max_drawdown?: number;
+    win_rate?: number;
+    compositeScore?: number;
+  };
+  outSample?: {
+    sharpe?: number;
+    return_pct?: number;
+    max_drawdown?: number;
+    win_rate?: number;
+    compositeScore?: number;
+  };
+}
+
 export interface ScanResult {
-  results: Array<{
+  results: ScanResultRow[];
+  robustnessScore: number;
+  totalRuns: number;
+  totalElapsedSeconds?: number;
+  bestOverall?: {
     symbol: string;
     timeframe: string;
     bestParams: Record<string, number>;
-    sharpe?: number;
-    totalReturn?: number;
-    maxDrawdown?: number;
-    winRate?: number;
-  }>;
-  robustnessScore: number;
-  totalRuns: number;
-  bestOverall: Record<string, number>;
+    inSample?: {
+      sharpe?: number;
+      return_pct?: number;
+      max_drawdown?: number;
+      win_rate?: number;
+      compositeScore?: number;
+    };
+    outSample?: {
+      sharpe?: number;
+      return_pct?: number;
+      max_drawdown?: number;
+      win_rate?: number;
+      compositeScore?: number;
+    };
+  };
 }
 
 export interface BacktestResult {
@@ -365,6 +396,7 @@ export async function runScan(opts: {
   timeframes: string[];
   paramRanges: Record<string, { min: number; max: number; step: number }>;
   optimizeTarget?: string;
+  weights?: Record<string, number>;
 }): Promise<ScanResult> {
   const res = await fetch(`${ENGINE_BASE}/engine/scan`, {
     method: "POST",

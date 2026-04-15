@@ -4,8 +4,10 @@ import { useState, useMemo, useCallback } from "react";
 import {
   ParamDef,
   OptimizeResult,
+  ScanResult,
   SymbolInfo,
   runOptimize,
+  runScan,
 } from "@/lib/api";
 
 interface ParamRange {
@@ -47,7 +49,6 @@ export default function OptimizerPanel({
   onApplyParams,
   onClose,
 }: OptimizerPanelProps) {
-  // Config state
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>(
     symbols.filter((s) => s.available).slice(0, 1).map((s) => s.symbol)
   );
@@ -68,13 +69,12 @@ export default function OptimizerPanel({
     return ranges;
   });
 
-  // Execution state
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<OptimizeResult | null>(null);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Estimate total backtests
   const estimate = useMemo(() => {
     let paramCombos = 1;
     Object.values(paramRanges).forEach((r) => {
@@ -89,6 +89,8 @@ export default function OptimizerPanel({
   const weightsTotal = useMemo(() => {
     return weights.sharpe + weights.return + weights.winRate + weights.drawdown + weights.profitFactor;
   }, [weights]);
+
+  const isScanMode = selectedSymbols.length > 1 || selectedTimeframes.length > 1;
 
   const toggleSymbol = (sym: string) => {
     setSelectedSymbols((prev) =>
@@ -123,13 +125,13 @@ export default function OptimizerPanel({
     setProgress(0);
     setError(null);
     setResult(null);
+    setScanResult(null);
 
     const progressInterval = setInterval(() => {
       setProgress((p) => Math.min(p + 0.05, 0.95));
     }, 1000);
 
     try {
-      // Normalize weights to 0-1 for the API
       const total = weightsTotal || 1;
       const normalizedWeights: Record<string, number> = {
         sharpe: weights.sharpe / total,
@@ -139,29 +141,45 @@ export default function OptimizerPanel({
         profitFactor: weights.profitFactor / total,
       };
 
-      const optimResult = await runOptimize({
-        code,
-        symbol: selectedSymbols[0],
-        timeframe: selectedTimeframes[0],
-        paramRanges,
-        weights: normalizedWeights,
-      });
-      setResult(optimResult);
+      if (isScanMode) {
+        const res = await runScan({
+          code,
+          symbols: selectedSymbols,
+          timeframes: selectedTimeframes,
+          paramRanges,
+          weights: normalizedWeights,
+        });
+        setScanResult(res);
+      } else {
+        const optimResult = await runOptimize({
+          code,
+          symbol: selectedSymbols[0],
+          timeframe: selectedTimeframes[0],
+          paramRanges,
+          weights: normalizedWeights,
+        });
+        setResult(optimResult);
+      }
+
       setProgress(1);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Optimization failed";
+      const msg = e instanceof Error ? e.message : isScanMode ? "Scan failed" : "Optimization failed";
       setError(msg);
     } finally {
       clearInterval(progressInterval);
       setRunning(false);
     }
-  }, [code, selectedSymbols, selectedTimeframes, paramRanges, weights, weightsTotal]);
+  }, [code, selectedSymbols, selectedTimeframes, paramRanges, weights, weightsTotal, isScanMode]);
 
   return (
     <div className="bg-bs-card border border-bs-border rounded-xl overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-bs-border">
-        <h3 className="text-lg font-semibold">🔬 Strategy Optimizer</h3>
+        <div>
+          <h3 className="text-lg font-semibold">🔬 Strategy Optimizer</h3>
+          <p className="text-xs text-bs-muted mt-1">
+            {isScanMode ? "Multi-selection detected — running cross-market scan" : "Single selection — running parameter optimization"}
+          </p>
+        </div>
         {onClose && (
           <button onClick={onClose} className="text-bs-muted hover:text-white transition-colors">
             ✕
@@ -169,9 +187,8 @@ export default function OptimizerPanel({
         )}
       </div>
 
-      {!result ? (
+      {!result && !scanResult ? (
         <div className="p-5 space-y-5">
-          {/* Symbol Selection */}
           <div>
             <label className="block text-sm font-medium mb-2">Symbols</label>
             <div className="flex flex-wrap gap-2">
@@ -191,7 +208,6 @@ export default function OptimizerPanel({
             </div>
           </div>
 
-          {/* Timeframe Selection */}
           <div>
             <label className="block text-sm font-medium mb-2">Timeframes</label>
             <div className="flex flex-wrap gap-2">
@@ -211,7 +227,6 @@ export default function OptimizerPanel({
             </div>
           </div>
 
-          {/* Scoring Weights (Collapsible) */}
           <div className="border border-bs-border rounded-lg overflow-hidden">
             <button
               onClick={() => setWeightsOpen(!weightsOpen)}
@@ -251,7 +266,6 @@ export default function OptimizerPanel({
             )}
           </div>
 
-          {/* Parameter Ranges */}
           <div>
             <label className="block text-sm font-medium mb-2">Parameter Ranges</label>
             <div className="space-y-3">
@@ -302,8 +316,7 @@ export default function OptimizerPanel({
             </div>
           </div>
 
-          {/* Estimate */}
-          <div className="bg-bs-input rounded-lg p-4 flex items-center justify-between">
+          <div className="bg-bs-input rounded-lg p-4 flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium">
                 Estimated: <span className="text-bs-purple">{estimate.total.toLocaleString()}</span> backtests
@@ -312,6 +325,9 @@ export default function OptimizerPanel({
                 ~{estimate.estimatedSeconds > 60
                   ? `${Math.ceil(estimate.estimatedSeconds / 60)} min`
                   : `${estimate.estimatedSeconds}s`}
+              </p>
+              <p className="text-xs text-bs-muted mt-1">
+                Mode: {isScanMode ? "Cross-market scan" : "Single-market optimization"}
               </p>
             </div>
             <button
@@ -322,11 +338,10 @@ export default function OptimizerPanel({
               {running && (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
               )}
-              {running ? "Optimizing..." : "🚀 Start Optimization"}
+              {running ? (isScanMode ? "Scanning..." : "Optimizing...") : (isScanMode ? "🛰️ Start Scan" : "🚀 Start Optimization")}
             </button>
           </div>
 
-          {/* Progress Bar */}
           {running && (
             <div>
               <div className="w-full h-2 bg-bs-input rounded-full overflow-hidden">
@@ -347,19 +362,23 @@ export default function OptimizerPanel({
             </div>
           )}
         </div>
-      ) : (
-        /* Results View */
+      ) : result ? (
         <OptimizerResults
           result={result}
           onApply={onApplyParams}
           onReset={() => setResult(null)}
         />
-      )}
+      ) : scanResult ? (
+        <ScanResultsView
+          result={scanResult}
+          onApply={onApplyParams}
+          onReset={() => setScanResult(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-// ─── Results View ──────────────────────────────────────────────
 function OptimizerResults({
   result,
   onApply,
@@ -375,39 +394,14 @@ function OptimizerResults({
 
   return (
     <div className="p-5 space-y-5">
-      {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <div className="bg-bs-input rounded-lg p-3 text-center">
-          <p className="text-[10px] text-bs-muted uppercase">Total Runs</p>
-          <p className="text-lg font-bold">{result.totalRuns}</p>
-        </div>
-        <div className="bg-bs-input rounded-lg p-3 text-center">
-          <p className="text-[10px] text-bs-muted uppercase">Duration</p>
-          <p className="text-lg font-bold">{result.elapsedSeconds.toFixed(1)}s</p>
-        </div>
-        <div className="bg-bs-input rounded-lg p-3 text-center">
-          <p className="text-[10px] text-bs-muted uppercase">In-Sample Sharpe</p>
-          <p className="text-lg font-bold text-bs-green">
-            {result.inSample?.sharpe?.toFixed(2) ?? "—"}
-          </p>
-        </div>
-        <div className="bg-bs-input rounded-lg p-3 text-center">
-          <p className="text-[10px] text-bs-muted uppercase">Out-Sample Sharpe</p>
-          <p className={`text-lg font-bold ${result.overfittingWarning ? "text-bs-red" : "text-bs-green"}`}>
-            {result.outSample?.sharpe?.toFixed(2) ?? "—"}
-          </p>
-        </div>
-        <div className="bg-bs-input rounded-lg p-3 text-center">
-          <p className="text-[10px] text-bs-muted uppercase">Composite Score</p>
-          <p className="text-lg font-bold text-bs-purple">
-            {result.inSample?.compositeScore != null
-              ? (result.inSample.compositeScore * 100).toFixed(1)
-              : "—"}
-          </p>
-        </div>
+        <MetricCard label="Total Runs" value={String(result.totalRuns)} />
+        <MetricCard label="Duration" value={`${result.elapsedSeconds.toFixed(1)}s`} />
+        <MetricCard label="In-Sample Sharpe" value={result.inSample?.sharpe?.toFixed(2) ?? "—"} highlight="green" />
+        <MetricCard label="Out-Sample Sharpe" value={result.outSample?.sharpe?.toFixed(2) ?? "—"} highlight={result.overfittingWarning ? "red" : "green"} />
+        <MetricCard label="Composite Score" value={result.inSample?.compositeScore != null ? (result.inSample.compositeScore * 100).toFixed(1) : "—"} highlight="purple" />
       </div>
 
-      {/* Overfitting Warning */}
       {result.overfittingWarning && (
         <div className="px-4 py-3 bg-bs-red/10 border border-bs-red/30 rounded-lg flex items-start gap-2">
           <span className="text-bs-red text-lg">⚠️</span>
@@ -420,29 +414,8 @@ function OptimizerResults({
         </div>
       )}
 
-      {/* Best Params */}
-      <div className="bg-bs-input rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h4 className="text-sm font-semibold">🏆 Best Parameters</h4>
-          {onApply && (
-            <button
-              onClick={() => onApply(result.bestParams)}
-              className="px-3 py-1 text-xs bg-bs-green text-black font-semibold rounded hover:bg-bs-green-dark transition-colors"
-            >
-              Apply
-            </button>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {Object.entries(result.bestParams).map(([key, val]) => (
-            <span key={key} className="px-2 py-1 bg-bs-card rounded text-sm font-mono">
-              {key}: <span className="text-bs-purple font-bold">{val}</span>
-            </span>
-          ))}
-        </div>
-      </div>
+      <BestParamsCard params={result.bestParams} onApply={onApply} />
 
-      {/* Top 10 Results Table */}
       {topResults.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold mb-2">Top 10 Results</h4>
@@ -471,24 +444,14 @@ function OptimizerResults({
                         .map(([k, v]) => `${k}=${v}`)
                         .join(", ")}
                     </td>
-                    <td className="px-2 py-2 text-right font-mono">
-                      {r.sharpe?.toFixed(2) ?? "—"}
-                    </td>
+                    <td className="px-2 py-2 text-right font-mono">{r.sharpe?.toFixed(2) ?? "—"}</td>
                     <td className={`px-2 py-2 text-right font-mono ${(r.return ?? 0) >= 0 ? "text-bs-green" : "text-bs-red"}`}>
                       {r.return != null ? `${r.return >= 0 ? "+" : ""}${r.return.toFixed(1)}%` : "—"}
                     </td>
-                    <td className="px-2 py-2 text-right font-mono text-bs-red">
-                      {r.drawdown != null ? `${r.drawdown.toFixed(1)}%` : "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right font-mono">
-                      {r.winRate != null ? `${r.winRate.toFixed(0)}%` : "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right font-mono text-bs-muted">
-                      {r.trades ?? "—"}
-                    </td>
-                    <td className="px-2 py-2 text-right font-mono">
-                      {r.profitFactor != null && r.profitFactor > 0 ? r.profitFactor.toFixed(2) : "—"}
-                    </td>
+                    <td className="px-2 py-2 text-right font-mono text-bs-red">{r.drawdown != null ? `${r.drawdown.toFixed(1)}%` : "—"}</td>
+                    <td className="px-2 py-2 text-right font-mono">{r.winRate != null ? `${r.winRate.toFixed(0)}%` : "—"}</td>
+                    <td className="px-2 py-2 text-right font-mono text-bs-muted">{r.trades ?? "—"}</td>
+                    <td className="px-2 py-2 text-right font-mono">{r.profitFactor != null && r.profitFactor > 0 ? r.profitFactor.toFixed(2) : "—"}</td>
                     <td className="px-2 py-2 text-right font-mono text-bs-purple font-bold">
                       {r.compositeScore != null ? (r.compositeScore * 100).toFixed(1) : "—"}
                     </td>
@@ -510,23 +473,214 @@ function OptimizerResults({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex justify-between">
-        <button
-          onClick={onReset}
-          className="px-4 py-2 text-sm text-bs-muted hover:text-white transition-colors"
-        >
-          ← Re-configure
-        </button>
-        {onApply && (
+      <ResultsActions onReset={onReset} onApply={onApply} bestParams={result.bestParams} />
+    </div>
+  );
+}
+
+function ScanResultsView({
+  result,
+  onApply,
+  onReset,
+}: {
+  result: ScanResult;
+  onApply?: (params: Record<string, number>) => void;
+  onReset: () => void;
+}) {
+  const rows = result.results || [];
+  const best = result.bestOverall;
+  const bestParams = best?.bestParams || {};
+  const bestOut = best?.outSample;
+
+  return (
+    <div className="p-5 space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <MetricCard label="Scan Rows" value={String(rows.length)} />
+        <MetricCard label="Total Runs" value={String(result.totalRuns)} />
+        <MetricCard label="Duration" value={result.totalElapsedSeconds != null ? `${result.totalElapsedSeconds.toFixed(1)}s` : "—"} />
+        <MetricCard label="Robustness" value={`${(result.robustnessScore ?? 0).toFixed(1)}`} highlight="purple" />
+        <MetricCard label="Best Out-Sample Sharpe" value={bestOut?.sharpe != null ? bestOut.sharpe.toFixed(2) : "—"} highlight="green" />
+      </div>
+
+      {best && (
+        <div className="bg-bs-input rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h4 className="text-sm font-semibold">🏆 Best Overall Combination</h4>
+              <p className="text-xs text-bs-muted mt-1">
+                {best.symbol} · {best.timeframe}
+              </p>
+            </div>
+            {onApply && Object.keys(bestParams).length > 0 && (
+              <button
+                onClick={() => onApply(bestParams)}
+                className="px-3 py-1 text-xs bg-bs-green text-black font-semibold rounded hover:bg-bs-green-dark transition-colors"
+              >
+                Apply Best Params
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <MetricCard label="Sharpe" value={bestOut?.sharpe != null ? bestOut.sharpe.toFixed(2) : "—"} highlight="green" compact />
+            <MetricCard label="Return" value={bestOut?.return_pct != null ? `${bestOut.return_pct >= 0 ? "+" : ""}${bestOut.return_pct.toFixed(1)}%` : "—"} highlight={bestOut?.return_pct != null && bestOut.return_pct >= 0 ? "green" : "red"} compact />
+            <MetricCard label="Drawdown" value={bestOut?.max_drawdown != null ? `${bestOut.max_drawdown.toFixed(1)}%` : "—"} highlight="red" compact />
+            <MetricCard label="Score" value={bestOut?.compositeScore != null ? (bestOut.compositeScore * 100).toFixed(1) : "—"} highlight="purple" compact />
+          </div>
+
+          <BestParamsCard params={bestParams} onApply={onApply} compact />
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold mb-2">Scan Results</h4>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-bs-border text-bs-muted text-left">
+                  <th className="px-2 py-2 font-medium">#</th>
+                  <th className="px-2 py-2 font-medium">Market</th>
+                  <th className="px-2 py-2 font-medium text-right">Sharpe</th>
+                  <th className="px-2 py-2 font-medium text-right">Return</th>
+                  <th className="px-2 py-2 font-medium text-right">MaxDD</th>
+                  <th className="px-2 py-2 font-medium text-right">Score</th>
+                  <th className="px-2 py-2 font-medium">Params</th>
+                  <th className="px-2 py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr key={`${row.symbol}-${row.timeframe}-${i}`} className="border-b border-bs-border/50 hover:bg-bs-card-hover">
+                    <td className="px-2 py-2 text-bs-muted">{i + 1}</td>
+                    <td className="px-2 py-2">
+                      <div className="font-medium">{row.symbol}</div>
+                      <div className="text-xs text-bs-muted">{row.timeframe}</div>
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono">{row.outSample?.sharpe != null ? row.outSample.sharpe.toFixed(2) : "—"}</td>
+                    <td className={`px-2 py-2 text-right font-mono ${(row.outSample?.return_pct ?? 0) >= 0 ? "text-bs-green" : "text-bs-red"}`}>
+                      {row.outSample?.return_pct != null ? `${row.outSample.return_pct >= 0 ? "+" : ""}${row.outSample.return_pct.toFixed(1)}%` : "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono text-bs-red">{row.outSample?.max_drawdown != null ? `${row.outSample.max_drawdown.toFixed(1)}%` : "—"}</td>
+                    <td className="px-2 py-2 text-right font-mono text-bs-purple font-bold">
+                      {row.outSample?.compositeScore != null ? (row.outSample.compositeScore * 100).toFixed(1) : "—"}
+                    </td>
+                    <td className="px-2 py-2 font-mono text-xs">
+                      {Object.entries(row.bestParams || {})
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(", ") || "—"}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      {onApply && Object.keys(row.bestParams || {}).length > 0 && (
+                        <button
+                          onClick={() => onApply(row.bestParams)}
+                          className="px-2 py-0.5 text-[10px] bg-bs-purple/20 text-bs-purple rounded hover:bg-bs-purple/40 transition-colors"
+                        >
+                          Apply
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <ResultsActions onReset={onReset} onApply={onApply} bestParams={bestParams} />
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  highlight,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: "green" | "red" | "purple";
+  compact?: boolean;
+}) {
+  const color =
+    highlight === "green"
+      ? "text-bs-green"
+      : highlight === "red"
+        ? "text-bs-red"
+        : highlight === "purple"
+          ? "text-bs-purple"
+          : "";
+
+  return (
+    <div className={`bg-bs-input rounded-lg ${compact ? "p-2" : "p-3"} text-center`}>
+      <p className="text-[10px] text-bs-muted uppercase">{label}</p>
+      <p className={`${compact ? "text-sm" : "text-lg"} font-bold ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function BestParamsCard({
+  params,
+  onApply,
+  compact = false,
+}: {
+  params: Record<string, number>;
+  onApply?: (params: Record<string, number>) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className="bg-bs-input rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3 gap-3">
+        <h4 className="text-sm font-semibold">🏆 Best Parameters</h4>
+        {onApply && Object.keys(params).length > 0 && (
           <button
-            onClick={() => onApply(result.bestParams)}
-            className="px-6 py-2 bg-bs-green text-black text-sm font-semibold rounded-lg hover:bg-bs-green-dark transition-colors"
+            onClick={() => onApply(params)}
+            className="px-3 py-1 text-xs bg-bs-green text-black font-semibold rounded hover:bg-bs-green-dark transition-colors"
           >
-            ✓ Apply Best Parameters
+            Apply
           </button>
         )}
       </div>
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(params).length > 0 ? Object.entries(params).map(([key, val]) => (
+          <span key={key} className={`px-2 py-1 bg-bs-card rounded ${compact ? "text-xs" : "text-sm"} font-mono`}>
+            {key}: <span className="text-bs-purple font-bold">{val}</span>
+          </span>
+        )) : (
+          <span className="text-sm text-bs-muted">No parameters available</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResultsActions({
+  onReset,
+  onApply,
+  bestParams,
+}: {
+  onReset: () => void;
+  onApply?: (params: Record<string, number>) => void;
+  bestParams: Record<string, number>;
+}) {
+  return (
+    <div className="flex justify-between">
+      <button
+        onClick={onReset}
+        className="px-4 py-2 text-sm text-bs-muted hover:text-white transition-colors"
+      >
+        ← Re-configure
+      </button>
+      {onApply && Object.keys(bestParams).length > 0 && (
+        <button
+          onClick={() => onApply(bestParams)}
+          className="px-6 py-2 bg-bs-green text-black text-sm font-semibold rounded-lg hover:bg-bs-green-dark transition-colors"
+        >
+          ✓ Apply Best Parameters
+        </button>
+      )}
     </div>
   );
 }
