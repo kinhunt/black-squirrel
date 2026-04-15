@@ -42,6 +42,13 @@ const StrategyExplanation = dynamic(() => import("@/components/StrategyExplanati
   ),
 });
 
+const ConfidenceCard = dynamic(() => import("@/components/ConfidenceCard"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[220px] bs-skeleton rounded-lg" />
+  ),
+});
+
 type Tab = "performance" | "parameters" | "code";
 
 export default function StrategyDetailPage() {
@@ -355,6 +362,7 @@ export default function StrategyDetailPage() {
           onSymbolChange={setSymbol}
           onTimeframeChange={setTimeframe}
           onBacktest={handleBacktest}
+          hasForks={forks.length > 0}
         />
       )}
 
@@ -388,6 +396,7 @@ function PerformanceTab({
   onSymbolChange,
   onTimeframeChange,
   onBacktest,
+  hasForks,
 }: {
   strategy: Strategy;
   backtest: BacktestResult | null;
@@ -400,6 +409,7 @@ function PerformanceTab({
   onSymbolChange: (s: string) => void;
   onTimeframeChange: (t: string) => void;
   onBacktest: () => void;
+  hasForks: boolean;
 }) {
   const symbolList = symbols.length > 0
     ? symbols.map((s) => s.symbol)
@@ -407,6 +417,19 @@ function PerformanceTab({
 
   return (
     <div className="space-y-6">
+      <ConfidenceCard
+        title="Trust Snapshot"
+        sharpe={metrics?.sharpe_ratio ?? strategy.backtest?.sharpeRatio ?? strategy.performance?.sharpeRatio ?? null}
+        totalReturn={metrics?.total_return ?? strategy.backtest?.totalReturn ?? strategy.performance?.totalReturn ?? null}
+        maxDrawdown={metrics?.max_drawdown ?? strategy.backtest?.maxDrawdown ?? strategy.performance?.maxDrawdown ?? null}
+        winRate={metrics?.win_rate ?? strategy.backtest?.winRate ?? strategy.performance?.winRate ?? null}
+        totalTrades={metrics?.total_trades ?? strategy.performance?.totalTrades ?? null}
+        robustnessScore={strategy.robustnessScore ?? null}
+        hasExplanation={true}
+        hasForks={hasForks}
+        contextLabel="A fast confidence read using live backtest stats, robustness, and explainability."
+      />
+
       {/* Backtest Controls */}
       <div className="flex flex-wrap items-center gap-3">
         <select

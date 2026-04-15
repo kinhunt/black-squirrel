@@ -46,6 +46,13 @@ const StrategyExplanation = dynamic(() => import("@/components/StrategyExplanati
   ),
 });
 
+const ConfidenceCard = dynamic(() => import("@/components/ConfidenceCard"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[220px] bs-skeleton rounded-lg" />
+  ),
+});
+
 export default function CreateStrategyPage() {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
@@ -357,6 +364,22 @@ export default function CreateStrategyPage() {
                 timeframes={timeframes}
                 onApplyParams={handleApplyParams}
                 onClose={() => setShowOptimizer(false)}
+              />
+            </div>
+          )}
+
+          {/* Confidence Snapshot */}
+          {(metrics || explanation) && !showOptimizer && (
+            <div className="border-t border-bs-border bg-bs-card px-4 py-4">
+              <ConfidenceCard
+                title="Draft Confidence"
+                sharpe={metrics?.sharpe_ratio ?? null}
+                totalReturn={metrics?.total_return ?? null}
+                maxDrawdown={metrics?.max_drawdown ?? null}
+                winRate={metrics?.win_rate ?? null}
+                totalTrades={metrics?.total_trades ?? null}
+                hasExplanation={!!explanation}
+                contextLabel="Use this to judge whether the current draft is worth iterating, optimizing, or publishing."
               />
             </div>
           )}
